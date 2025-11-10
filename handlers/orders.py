@@ -1,9 +1,9 @@
 from telegram import Update
-from telegram.ext import CallbackContext
+from telegram.ext import ContextTypes
 from magnit_api import get_unprocessed_orders, get_all_products
 
 
-async def show_orders(update: Update, context: CallbackContext):
+async def show_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает новые заказы"""
     await update.message.reply_text("📦 Получаю информацию о заказах...")
 

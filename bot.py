@@ -1,9 +1,7 @@
 import logging
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from config import TELEGRAM_BOT_TOKEN, ADMIN_IDS
-
-from keep_alive import keep_alive
 
 from handlers.orders import show_orders
 from handlers.stocks import (
@@ -30,7 +28,7 @@ def is_admin(user_id):
     return user_id in ADMIN_IDS
 
 
-async def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет доступа к этому боту")
@@ -49,7 +47,7 @@ async def start(update: Update, context: CallbackContext):
     await update.message.reply_text(welcome_text, reply_markup=get_main_keyboard())
 
 
-async def handle_message(update: Update, context: CallbackContext):
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик текстовых сообщений"""
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ У вас нет доступа к этому боту")
@@ -139,7 +137,8 @@ async def handle_message(update: Update, context: CallbackContext):
             reply_markup=get_main_keyboard()
         )
 
-async def sync_all(update: Update, context: CallbackContext):
+
+async def sync_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Синхронизирует всё"""
     await update.message.reply_text("🔄 Начинаю полную синхронизацию...")
 
@@ -159,7 +158,7 @@ async def sync_all(update: Update, context: CallbackContext):
         await update.message.reply_text("⚠️ Синхронизация завершена с ошибками")
 
 
-async def show_help(update: Update, context: CallbackContext):
+async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает справку"""
     help_text = (
         "🤖 Помощь по боту управления Magnit Marketplace\n\n"
@@ -172,7 +171,7 @@ async def show_help(update: Update, context: CallbackContext):
     await update.message.reply_text(help_text, parse_mode='HTML')
 
 
-async def get_my_id(update: Update, context: CallbackContext):
+async def get_my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Команда для получения своего ID"""
     user_id = update.effective_user.id
     await update.message.reply_text(f"🆔 Ваш ID: {user_id}\n\nДобавьте его в ADMIN_IDS в файле .env")
@@ -180,8 +179,12 @@ async def get_my_id(update: Update, context: CallbackContext):
 
 def main():
     """Основная функция"""
-    keep_alive()
-    # Создаем Application
+    print("🚀 Starting Magnit Bot...")
+
+    if not TELEGRAM_BOT_TOKEN:
+        print("❌ ERROR: TELEGRAM_BOT_TOKEN is not set!")
+        return
+
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Добавляем обработчики
@@ -189,6 +192,9 @@ def main():
     application.add_handler(CommandHandler("myid", get_my_id))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запускаем бота
-    print("🤖 Бот запущен...")
+    print("✅ Бот запущен и работает!")
     application.run_polling()
+
+
+if __name__ == "__main__":
+    main()

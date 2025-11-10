@@ -1,10 +1,10 @@
 from telegram import Update
-from telegram.ext import CallbackContext
+from telegram.ext import ContextTypes
 from magnit_api import sync_prices_with_magnit, get_all_products, update_single_price, get_prices_info
 from keyboards import get_prices_keyboard, get_back_keyboard
 
 
-async def show_prices_menu(update: Update, context: CallbackContext):
+async def show_prices_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает меню управления ценами"""
     await update.message.reply_text(
         "💰 Управление ценами\n\n"
@@ -13,7 +13,7 @@ async def show_prices_menu(update: Update, context: CallbackContext):
     )
 
 
-async def sync_prices(update: Update, context: CallbackContext):
+async def sync_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Синхронизирует цены"""
     await update.message.reply_text("🔄 Синхронизирую цены...")
 
@@ -25,7 +25,7 @@ async def sync_prices(update: Update, context: CallbackContext):
         await update.message.reply_text(f"❌ {message}")
 
 
-async def start_price_edit(update: Update, context: CallbackContext):
+async def start_price_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начинает процесс редактирования цены"""
     products = get_all_products()
     if not products:
@@ -52,7 +52,7 @@ async def start_price_edit(update: Update, context: CallbackContext):
     await update.message.reply_text(message, reply_markup=get_back_keyboard())
 
 
-async def handle_price_product_selection(update: Update, context: CallbackContext):
+async def handle_price_product_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обрабатывает выбор товара для редактирования цены"""
     try:
         product_num = int(update.message.text.strip())
@@ -89,7 +89,7 @@ async def handle_price_product_selection(update: Update, context: CallbackContex
         await update.message.reply_text("❌ Введите число")
 
 
-async def handle_price_value_input(update: Update, context: CallbackContext):
+async def handle_price_value_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обрабатывает ввод нового значения цены"""
     try:
         new_price = float(update.message.text.strip())
@@ -125,7 +125,7 @@ async def handle_price_value_input(update: Update, context: CallbackContext):
         await update.message.reply_text("❌ Введите число")
 
 
-async def show_current_prices(update: Update, context: CallbackContext):
+async def show_current_prices(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает текущие цены товаров"""
     await update.message.reply_text("💰 Получаю информацию о ценах...")
 

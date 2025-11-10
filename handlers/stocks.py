@@ -1,10 +1,10 @@
 from telegram import Update
-from telegram.ext import CallbackContext
+from telegram.ext import ContextTypes
 from magnit_api import sync_stocks_with_magnit, get_all_products, update_single_stock, get_stocks_info
 from keyboards import get_stocks_keyboard, get_back_keyboard
 
 
-async def show_stocks_menu(update: Update, context: CallbackContext):
+async def show_stocks_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает меню управления остатками"""
     await update.message.reply_text(
         "📊 Управление остатками\n\n"
@@ -13,7 +13,7 @@ async def show_stocks_menu(update: Update, context: CallbackContext):
     )
 
 
-async def show_current_stocks(update: Update, context: CallbackContext):
+async def show_current_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает текущие остатки товаров"""
     await update.message.reply_text("📊 Получаю информацию об остатках...")
 
@@ -52,7 +52,7 @@ async def show_current_stocks(update: Update, context: CallbackContext):
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка при получении остатков: {str(e)}")
 
-async def sync_stocks(update: Update, context: CallbackContext):
+async def sync_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Синхронизирует остатки"""
     await update.message.reply_text("🔄 Синхронизирую остатки...")
 
@@ -64,7 +64,7 @@ async def sync_stocks(update: Update, context: CallbackContext):
         await update.message.reply_text(f"❌ {message}")
 
 
-async def start_stock_edit(update: Update, context: CallbackContext):
+async def start_stock_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начинает процесс редактирования остатка"""
     products = get_all_products()
     if not products:
@@ -93,7 +93,7 @@ async def start_stock_edit(update: Update, context: CallbackContext):
     await update.message.reply_text(message, reply_markup=get_back_keyboard())
 
 
-async def handle_stock_product_selection(update: Update, context: CallbackContext):
+async def handle_stock_product_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обрабатывает выбор товара для редактирования остатка"""
     try:
         product_num = int(update.message.text.strip())
@@ -130,7 +130,7 @@ async def handle_stock_product_selection(update: Update, context: CallbackContex
         await update.message.reply_text("❌ Введите число")
 
 
-async def handle_stock_value_input(update: Update, context: CallbackContext):
+async def handle_stock_value_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обрабатывает ввод нового значения остатка"""
     try:
         new_stock = int(update.message.text.strip())
