@@ -79,8 +79,8 @@ def start_bot_thread():
     start_keep_alive()
 
 
-# Запускаем бота автоматически при старте сервера
-@app.before_first_request
+# Запускаем бота автоматически при старте приложения
+@app.before_request
 def auto_start_bot():
     """Автоматически запускаем бота при первом запросе"""
     global bot_started, bot_thread
