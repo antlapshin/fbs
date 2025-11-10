@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from config import TELEGRAM_BOT_TOKEN, ADMIN_IDS
@@ -177,8 +178,8 @@ async def get_my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🆔 Ваш ID: {user_id}\n\nДобавьте его в ADMIN_IDS в файле .env")
 
 
-def main():
-    """Основная функция"""
+async def main_async():
+    """Основная асинхронная функция бота"""
     print("🚀 Starting Magnit Bot...")
 
     if not TELEGRAM_BOT_TOKEN:
@@ -192,8 +193,73 @@ def main():
     application.add_handler(CommandHandler("myid", get_my_id))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("✅ Бот запущен и работает!")
-    application.run_polling()
+    print("✅ Бот инициализирован! Запускаем polling...")
+
+    # Инициализируем приложение
+    await application.initialize()
+    await application.start()
+
+    # Запускаем polling вручную
+    await application.updater.start_polling()
+
+    print("🎉 Бот запущен и работает!")
+
+    try:
+        # Бесконечный цикл вместо стандартного run_polling
+        # Это позволяет избежать обработки сигналов
+        while True:
+            await asyncio.sleep(3600)  # Спим 1 час
+    except KeyboardInterrupt:
+        print("🛑 Остановка бота...")
+    except Exception as e:
+        print(f"❌ Ошибка в основном цикле: {e}")
+    finally:
+        # Корректно останавливаем бота
+        print("⏹️ Завершаем работу бота...")
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
+        print("👋 Бот остановлен")
+
+
+async def simple_main():
+    """Упрощенная версия запуска для Render"""
+    print("🚀 Starting Magnit Bot (simple mode)...")
+
+    if not TELEGRAM_BOT_TOKEN:
+        print("❌ ERROR: TELEGRAM_BOT_TOKEN is not set!")
+        return
+
+    try:
+        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+        # Добавляем обработчики
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("myid", get_my_id))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+        print("✅ Бот инициализирован! Запускаем polling...")
+
+        # Запускаем стандартным способом, но в отдельном потоке это вызовет ошибки
+        # Вместо этого используем ручной запуск
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+
+        print("🎉 Бот запущен и работает!")
+
+        # Простой бесконечный цикл
+        while True:
+            await asyncio.sleep(10)
+
+    except Exception as e:
+        print(f"❌ Ошибка при запуске бота: {e}")
+        raise
+
+
+def main():
+    """Синхронная обертка для обратной совместимости"""
+    asyncio.run(simple_main())
 
 
 if __name__ == "__main__":

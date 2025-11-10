@@ -33,25 +33,16 @@ def ping():
 def run_bot():
     """Запускает Telegram бота"""
     try:
-        # Создаем новый event loop для этого потока
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        # Импортируем здесь чтобы избежать циклических импортов
-        from bot import main as bot_main
+        from bot import simple_main
         logger.info("🚀 Starting Telegram bot...")
 
         # Запускаем асинхронную функцию
-        loop.run_until_complete(bot_main())
+        asyncio.run(simple_main())
 
     except Exception as e:
         logger.error(f"❌ Bot error: {e}")
         import traceback
         traceback.print_exc()
-    finally:
-        # Закрываем loop при завершении
-        if loop:
-            loop.close()
 
 
 @app.before_request
