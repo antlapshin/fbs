@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Глобальная переменная для отслеживания запуска бота
+bot_started = False
+
 
 @app.route('/')
 def home():
@@ -39,24 +42,23 @@ def run_bot():
         traceback.print_exc()
 
 
-# Запускаем бота в отдельном потоке при старте приложения
-bot_thread = None
-
-
-@app.before_first_request
-def start_bot():
-    global bot_thread
-    if bot_thread is None or not bot_thread.is_alive():
+@app.before_request
+def start_bot_on_first_request():
+    """Запускаем бота при первом запросе"""
+    global bot_started
+    if not bot_started:
+        bot_started = True
+        logger.info("🔄 Starting bot thread on first request...")
         bot_thread = threading.Thread(target=run_bot, daemon=True)
         bot_thread.start()
-        logger.info("✅ Bot thread started")
+        # Даем боту время на запуск
+        time.sleep(3)
 
 
 if __name__ == "__main__":
-    # Запускаем бот при старте
-    start_bot()
+    logger.info("🌐 Starting Flask server...")
+    port = int(os.environ.get("PORT", 10000))
+    logger.info(f"📍 Server will run on port {port}")
 
     # Запускаем Flask сервер
-    port = int(os.environ.get("PORT", 10000))
-    logger.info(f"🌐 Starting Flask server on port {port}")
     app.run(host='0.0.0.0', port=port)
