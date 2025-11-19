@@ -178,43 +178,63 @@ async def get_my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🆔 Ваш ID: {user_id}\n\nДобавьте его в ADMIN_IDS в файле .env")
 
 
-async def main_async():
-    """Основная асинхронная функция бота"""
-    print("🚀 Starting Magnit Bot...")
-
-    if not TELEGRAM_BOT_TOKEN:
-        print("❌ ERROR: TELEGRAM_BOT_TOKEN is not set!")
-        return
-
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-    # Добавляем обработчики
+def register_handlers(application: Application) -> None:
+    """Добавляет все обработчики в экземпляр Application."""
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("myid", get_my_id))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("✅ Бот инициализирован! Запускаем polling...")
 
-    # Инициализируем приложение
+def create_application() -> Application:
+    """Создает и возвращает Telegram Application с зарегистрированными обработчиками."""
+    if not TELEGRAM_BOT_TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
+
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    register_handlers(application)
+    return application
+
+
+async def initialize_application() -> Application:
+    """Создает приложение и выполняет инициализацию без запуска polling."""
+    application = create_application()
     await application.initialize()
     await application.start()
+    return application
 
-    # Запускаем polling вручную
+
+async def process_update_with_application(update_data: dict, application: Application) -> None:
+    """Обрабатывает обновление Telegram, используя готовое приложение."""
+    update = Update.de_json(update_data, application.bot)
+    await application.process_update(update)
+
+
+async def main_async():
+    """Основная асинхронная функция бота (режим polling)."""
+    print("🚀 Starting Magnit Bot...")
+
+    try:
+        application = create_application()
+    except RuntimeError as error:
+        print(f"❌ ERROR: {error}")
+        return
+
+    print("✅ Бот инициализирован! Запускаем polling...")
+
+    await application.initialize()
+    await application.start()
     await application.updater.start_polling()
 
     print("🎉 Бот запущен и работает!")
 
     try:
-        # Бесконечный цикл вместо стандартного run_polling
-        # Это позволяет избежать обработки сигналов
         while True:
-            await asyncio.sleep(3600)  # Спим 1 час
+            await asyncio.sleep(3600)
     except KeyboardInterrupt:
         print("🛑 Остановка бота...")
     except Exception as e:
         print(f"❌ Ошибка в основном цикле: {e}")
     finally:
-        # Корректно останавливаем бота
         print("⏹️ Завершаем работу бота...")
         await application.updater.stop()
         await application.stop()
@@ -223,42 +243,35 @@ async def main_async():
 
 
 async def simple_main():
-    """Упрощенная версия запуска для Render"""
+    """Упрощенная версия запуска (polling) для локальной отладки."""
     print("🚀 Starting Magnit Bot (simple mode)...")
 
-    if not TELEGRAM_BOT_TOKEN:
-        print("❌ ERROR: TELEGRAM_BOT_TOKEN is not set!")
+    try:
+        application = create_application()
+    except RuntimeError as error:
+        print(f"❌ ERROR: {error}")
         return
 
     try:
-        application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-
-        # Добавляем обработчики
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("myid", get_my_id))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-        print("✅ Бот инициализирован! Запускаем polling...")
-
-        # Запускаем стандартным способом, но в отдельном потоке это вызовет ошибки
-        # Вместо этого используем ручной запуск
         await application.initialize()
         await application.start()
         await application.updater.start_polling()
 
         print("🎉 Бот запущен и работает!")
 
-        # Простой бесконечный цикл
         while True:
             await asyncio.sleep(10)
-
     except Exception as e:
         print(f"❌ Ошибка при запуске бота: {e}")
         raise
+    finally:
+        await application.updater.stop()
+        await application.stop()
+        await application.shutdown()
 
 
 def main():
-    """Синхронная обертка для обратной совместимости"""
+    """Синхронная обертка для обратной совместимости."""
     asyncio.run(simple_main())
 
 
