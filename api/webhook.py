@@ -1,47 +1,47 @@
 import asyncio
 import json
 import logging
-import threading
 from http.server import BaseHTTPRequestHandler
 
-from bot import initialize_application, process_update_with_application
-
+from bot import create_application
+from telegram import Update
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_loop = asyncio.new_event_loop()
+# Глобальная переменная для кэширования приложения между запросами
 _application = None
-_ready_event = threading.Event()
+_initialized = False
 
 
-def _loop_runner():
-    """Фоновый поток, который крутит event loop для Telegram Application."""
-    asyncio.set_event_loop(_loop)
+async def _get_or_create_application():
+    """Получает или создает и инициализирует Telegram Application."""
+    global _application, _initialized
+    
+    if _application is None:
+        logger.info("🔧 Creating Telegram application...")
+        _application = create_application()
+        logger.info("✅ Telegram application created")
+    
+    if not _initialized:
+        logger.info("🚀 Initializing application...")
+        await _application.initialize()
+        await _application.start()
+        _initialized = True
+        logger.info("✅ Application initialized and started")
+    
+    return _application
 
-    async def _bootstrap():
-        global _application
-        _application = await initialize_application()
-        logger.info("✅ Telegram application initialized for webhook mode")
-        _ready_event.set()
 
-    _loop.create_task(_bootstrap())
-    _loop.run_forever()
-
-
-threading.Thread(target=_loop_runner, daemon=True, name="TelegramLoop").start()
-
-
-def _process_update(update_data: dict) -> None:
-    """Прокидывает обновление в приложение внутри фонового event loop."""
-    if not _ready_event.wait(timeout=10):
-        raise RuntimeError("Telegram application failed to initialize")
-
-    async def _run():
-        await process_update_with_application(update_data, _application)
-
-    future = asyncio.run_coroutine_threadsafe(_run(), _loop)
-    future.result(timeout=20)
+async def _process_update_async(update_data: dict) -> None:
+    """Обрабатывает обновление Telegram асинхронно."""
+    application = await _get_or_create_application()
+    
+    # Создаем Update объект из JSON
+    update = Update.de_json(update_data, application.bot)
+    
+    # Обрабатываем обновление
+    await application.process_update(update)
 
 
 class handler(BaseHTTPRequestHandler):
@@ -66,15 +66,20 @@ class handler(BaseHTTPRequestHandler):
 
         try:
             update_data = json.loads(raw_body.decode("utf-8"))
-        except json.JSONDecodeError:
+            logger.info(f"📨 Received update: {update_data.get('update_id', 'unknown')}")
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Invalid JSON: {e}")
             self._send(400, {"status": "error", "message": "invalid json"})
             return
 
         try:
-            _process_update(update_data)
+            # Запускаем асинхронную обработку в новом event loop
+            # Это работает в serverless окружении Vercel
+            asyncio.run(_process_update_async(update_data))
+            logger.info("✅ Update processed successfully")
         except Exception as exc:  # pylint: disable=broad-except
-            logger.exception("Webhook processing failed: %s", exc)
-            self._send(500, {"status": "error", "message": "webhook failure"})
+            logger.exception("❌ Webhook processing failed: %s", exc)
+            self._send(500, {"status": "error", "message": str(exc)})
             return
 
         self._send(200, {"status": "ok"})
