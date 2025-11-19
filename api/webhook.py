@@ -78,33 +78,61 @@ class handler(BaseHTTPRequestHandler):
             self._send(400, {"status": "error", "message": "invalid json"})
             return
 
-        # Сразу возвращаем ответ webhook'у (Telegram требует быстрый ответ)
-        self._send(200, {"status": "ok"})
-        
-        # Обрабатываем обновление в фоне (не блокируем ответ)
+        # Обрабатываем обновление синхронно, но возвращаем ответ быстро
         try:
-            # Используем asyncio.run() с правильной обработкой
-            async def _handle_update():
-                try:
-                    await _process_update_async(update_data)
-                    # Даем время на завершение HTTP запросов
-                    await asyncio.sleep(1.0)
-                except Exception as e:
-                    logger.error(f"Error in _handle_update: {e}")
-                    raise
+            # Создаем новый event loop для обработки
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             
-            # Запускаем в отдельном потоке, чтобы не блокировать
-            import threading
-            def _run_async():
+            try:
+                # Запускаем обработку обновления
+                logger.info("🔄 Processing update...")
+                loop.run_until_complete(_process_update_async(update_data))
+                logger.info("✅ Update processed, waiting for HTTP requests...")
+                
+                # Даем время на завершение HTTP запросов к Telegram API
+                # Но не ждем слишком долго (таймаут 3 секунды)
+                pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+                if pending:
+                    logger.info(f"⏳ Waiting for {len(pending)} pending HTTP requests...")
+                    try:
+                        loop.run_until_complete(asyncio.wait_for(
+                            asyncio.gather(*pending, return_exceptions=True),
+                            timeout=3.0
+                        ))
+                        logger.info("✅ All HTTP requests completed")
+                    except asyncio.TimeoutError:
+                        logger.warning("⚠️ Some HTTP requests didn't complete in time (this is OK)")
+                
+            except Exception as e:
+                logger.error(f"❌ Error processing update: {e}", exc_info=True)
+                raise
+            finally:
+                # Правильно закрываем loop
                 try:
-                    asyncio.run(_handle_update())
+                    # Отменяем все оставшиеся задачи
+                    remaining = [t for t in asyncio.all_tasks(loop) if not t.done()]
+                    if remaining:
+                        logger.info(f"🔄 Cancelling {len(remaining)} remaining tasks...")
+                        for task in remaining:
+                            task.cancel()
+                        try:
+                            loop.run_until_complete(asyncio.wait_for(
+                                asyncio.gather(*remaining, return_exceptions=True),
+                                timeout=1.0
+                            ))
+                        except asyncio.TimeoutError:
+                            pass
                 except Exception as e:
-                    logger.error(f"Error in async thread: {e}")
+                    logger.warning(f"Error during cleanup: {e}")
+                finally:
+                    loop.close()
             
-            thread = threading.Thread(target=_run_async, daemon=True)
-            thread.start()
-            logger.info("✅ Update queued for processing")
+            # Возвращаем успешный ответ
+            self._send(200, {"status": "ok"})
                     
         except Exception as exc:  # pylint: disable=broad-except
-            logger.exception("❌ Failed to queue update: %s", exc)
+            logger.exception("❌ Webhook processing failed: %s", exc)
+            self._send(500, {"status": "error", "message": str(exc)})
+            return
 
