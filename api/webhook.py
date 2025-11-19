@@ -35,6 +35,12 @@ async def _get_or_create_application():
 
 async def _process_update_async(update_data: dict) -> None:
     """Обрабатывает обновление Telegram асинхронно."""
+    # Логируем информацию об обновлении
+    if 'message' in update_data and 'from' in update_data['message']:
+        user_id = update_data['message']['from'].get('id')
+        username = update_data['message']['from'].get('username', 'no username')
+        logger.info(f"📨 Processing update from user {user_id} (@{username})")
+    
     application = await _get_or_create_application()
     
     # Создаем Update объект из JSON
@@ -72,53 +78,33 @@ class handler(BaseHTTPRequestHandler):
             self._send(400, {"status": "error", "message": "invalid json"})
             return
 
+        # Сразу возвращаем ответ webhook'у (Telegram требует быстрый ответ)
+        self._send(200, {"status": "ok"})
+        
+        # Обрабатываем обновление в фоне (не блокируем ответ)
         try:
-            # Создаем новый event loop для каждого запроса
-            # Это необходимо в serverless окружении Vercel
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            try:
-                # Запускаем обработку обновления
-                loop.run_until_complete(_process_update_async(update_data))
-                
-                # Даем время на завершение всех HTTP запросов
-                # Ждем завершения всех pending задач
-                pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
-                if pending:
-                    logger.info(f"⏳ Waiting for {len(pending)} pending tasks...")
-                    # Ждем завершения с таймаутом
-                    try:
-                        loop.run_until_complete(asyncio.wait_for(
-                            asyncio.gather(*pending, return_exceptions=True),
-                            timeout=2.0
-                        ))
-                    except asyncio.TimeoutError:
-                        logger.warning("⚠️ Some tasks didn't complete in time")
-                
-                logger.info("✅ Update processed successfully")
-            finally:
-                # Правильно закрываем loop
+            # Используем asyncio.run() с правильной обработкой
+            async def _handle_update():
                 try:
-                    # Отменяем все оставшиеся задачи
-                    for task in asyncio.all_tasks(loop):
-                        if not task.done():
-                            task.cancel()
-                    # Ждем отмены с таймаутом
-                    if asyncio.all_tasks(loop):
-                        loop.run_until_complete(asyncio.wait_for(
-                            asyncio.gather(*asyncio.all_tasks(loop), return_exceptions=True),
-                            timeout=1.0
-                        ))
+                    await _process_update_async(update_data)
+                    # Даем время на завершение HTTP запросов
+                    await asyncio.sleep(1.0)
                 except Exception as e:
-                    logger.warning(f"Error during cleanup: {e}")
-                finally:
-                    loop.close()
+                    logger.error(f"Error in _handle_update: {e}")
+                    raise
+            
+            # Запускаем в отдельном потоке, чтобы не блокировать
+            import threading
+            def _run_async():
+                try:
+                    asyncio.run(_handle_update())
+                except Exception as e:
+                    logger.error(f"Error in async thread: {e}")
+            
+            thread = threading.Thread(target=_run_async, daemon=True)
+            thread.start()
+            logger.info("✅ Update queued for processing")
                     
         except Exception as exc:  # pylint: disable=broad-except
-            logger.exception("❌ Webhook processing failed: %s", exc)
-            self._send(500, {"status": "error", "message": str(exc)})
-            return
-
-        self._send(200, {"status": "ok"})
+            logger.exception("❌ Failed to queue update: %s", exc)
 
