@@ -79,58 +79,34 @@ class handler(BaseHTTPRequestHandler):
             self._send(400, {"status": "error", "message": "invalid json"})
             return
 
-        # Обрабатываем обновление синхронно, но возвращаем ответ быстро
+        # Обрабатываем обновление используя asyncio.run()
+        # Это правильный способ для serverless - он автоматически управляет loop
         try:
-            # Создаем новый event loop для обработки
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            logger.info("🔄 Processing update...")
             
-            try:
-                # Запускаем обработку обновления
-                logger.info("🔄 Processing update...")
-                loop.run_until_complete(_process_update_async(update_data))
-                logger.info("✅ Update processed, waiting for HTTP requests...")
-                
-                # process_update должен ждать завершения всех HTTP запросов
-                # Но на всякий случай проверяем, нет ли pending задач
-                # Если есть - даем им время завершиться
-                pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+            # Используем asyncio.run() - он создает новый loop, выполняет корутину и правильно закрывает loop
+            # Но нужно убедиться, что все HTTP запросы завершились
+            async def _process_with_cleanup():
+                await _process_update_async(update_data)
+                # Даем время на завершение всех HTTP запросов
+                # Проверяем pending задачи и ждем их завершения
+                pending = [t for t in asyncio.all_tasks() if not t.done()]
                 if pending:
-                    logger.info(f"⏳ Found {len(pending)} pending tasks after process_update, waiting...")
+                    logger.info(f"⏳ Waiting for {len(pending)} pending HTTP requests...")
                     try:
-                        # Ждем максимум 5 секунд - этого должно хватить для обычных запросов
-                        loop.run_until_complete(asyncio.wait_for(
+                        await asyncio.wait_for(
                             asyncio.gather(*pending, return_exceptions=True),
                             timeout=5.0
-                        ))
-                        logger.info("✅ All pending tasks completed")
+                        )
+                        logger.info("✅ All HTTP requests completed")
                     except asyncio.TimeoutError:
-                        logger.warning("⚠️ Some tasks didn't complete in 5s - will not close loop")
-                else:
-                    logger.info("✅ No pending tasks after process_update")
-                
-            except Exception as e:
-                logger.error(f"❌ Error processing update: {e}", exc_info=True)
-                raise
-            finally:
-                # КРИТИЧНО: Не закрываем loop, если есть pending задачи
-                # Закрытие loop до завершения HTTP запросов вызывает ошибку "Event loop is closed"
-                try:
-                    # Финальная проверка - если есть задачи, НЕ закрываем loop
-                    remaining = [t for t in asyncio.all_tasks(loop) if not t.done()]
-                    if remaining:
-                        logger.warning(f"⚠️ {len(remaining)} tasks still pending, NOT closing loop to avoid 'Event loop is closed' error")
-                        # НЕ закрываем loop - пусть HTTP запросы завершатся
-                        # В serverless окружении функция завершится, но loop останется открытым
-                        return
-                    
-                    # Закрываем loop только если нет pending задач
-                    if not loop.is_closed():
-                        loop.close()
-                        logger.info("✅ Loop closed (no pending tasks)")
-                except Exception as e:
-                    logger.warning(f"Error during cleanup: {e}")
-                    # В случае ошибки тоже не закрываем loop
+                        logger.warning("⚠️ Some HTTP requests didn't complete in 5s")
+                        # Даем еще немного времени
+                        await asyncio.sleep(1.0)
+            
+            # Запускаем через asyncio.run() - он правильно управляет loop
+            asyncio.run(_process_with_cleanup())
+            logger.info("✅ Update processed successfully")
             
             # Возвращаем успешный ответ
             self._send(200, {"status": "ok"})
