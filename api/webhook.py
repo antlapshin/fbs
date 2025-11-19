@@ -79,33 +79,14 @@ class handler(BaseHTTPRequestHandler):
             self._send(400, {"status": "error", "message": "invalid json"})
             return
 
-        # Обрабатываем обновление используя asyncio.run()
-        # Это правильный способ для serverless - он автоматически управляет loop
+        # Обрабатываем обновление - используем простой подход без сложной логики
         try:
             logger.info("🔄 Processing update...")
             
-            # Используем asyncio.run() - он создает новый loop, выполняет корутину и правильно закрывает loop
-            # Но нужно убедиться, что все HTTP запросы завершились
-            async def _process_with_cleanup():
-                await _process_update_async(update_data)
-                # Даем время на завершение всех HTTP запросов
-                # Проверяем pending задачи и ждем их завершения
-                pending = [t for t in asyncio.all_tasks() if not t.done()]
-                if pending:
-                    logger.info(f"⏳ Waiting for {len(pending)} pending HTTP requests...")
-                    try:
-                        await asyncio.wait_for(
-                            asyncio.gather(*pending, return_exceptions=True),
-                            timeout=5.0
-                        )
-                        logger.info("✅ All HTTP requests completed")
-                    except asyncio.TimeoutError:
-                        logger.warning("⚠️ Some HTTP requests didn't complete in 5s")
-                        # Даем еще немного времени
-                        await asyncio.sleep(1.0)
+            # Просто запускаем обработку через asyncio.run()
+            # process_update должен ждать завершения всех HTTP запросов
+            asyncio.run(_process_update_async(update_data))
             
-            # Запускаем через asyncio.run() - он правильно управляет loop
-            asyncio.run(_process_with_cleanup())
             logger.info("✅ Update processed successfully")
             
             # Возвращаем успешный ответ
