@@ -73,10 +73,48 @@ class handler(BaseHTTPRequestHandler):
             return
 
         try:
-            # Запускаем асинхронную обработку в новом event loop
-            # Это работает в serverless окружении Vercel
-            asyncio.run(_process_update_async(update_data))
-            logger.info("✅ Update processed successfully")
+            # Создаем новый event loop для каждого запроса
+            # Это необходимо в serverless окружении Vercel
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Запускаем обработку обновления
+                loop.run_until_complete(_process_update_async(update_data))
+                
+                # Даем время на завершение всех HTTP запросов
+                # Ждем завершения всех pending задач
+                pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
+                if pending:
+                    logger.info(f"⏳ Waiting for {len(pending)} pending tasks...")
+                    # Ждем завершения с таймаутом
+                    try:
+                        loop.run_until_complete(asyncio.wait_for(
+                            asyncio.gather(*pending, return_exceptions=True),
+                            timeout=2.0
+                        ))
+                    except asyncio.TimeoutError:
+                        logger.warning("⚠️ Some tasks didn't complete in time")
+                
+                logger.info("✅ Update processed successfully")
+            finally:
+                # Правильно закрываем loop
+                try:
+                    # Отменяем все оставшиеся задачи
+                    for task in asyncio.all_tasks(loop):
+                        if not task.done():
+                            task.cancel()
+                    # Ждем отмены с таймаутом
+                    if asyncio.all_tasks(loop):
+                        loop.run_until_complete(asyncio.wait_for(
+                            asyncio.gather(*asyncio.all_tasks(loop), return_exceptions=True),
+                            timeout=1.0
+                        ))
+                except Exception as e:
+                    logger.warning(f"Error during cleanup: {e}")
+                finally:
+                    loop.close()
+                    
         except Exception as exc:  # pylint: disable=broad-except
             logger.exception("❌ Webhook processing failed: %s", exc)
             self._send(500, {"status": "error", "message": str(exc)})
