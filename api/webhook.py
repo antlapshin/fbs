@@ -98,14 +98,14 @@ class handler(BaseHTTPRequestHandler):
                 if pending:
                     logger.info(f"⏳ Found {len(pending)} pending tasks after process_update, waiting...")
                     try:
-                        # Ждем максимум 3 секунды - этого должно хватить для обычных запросов
+                        # Ждем максимум 5 секунд - этого должно хватить для обычных запросов
                         loop.run_until_complete(asyncio.wait_for(
                             asyncio.gather(*pending, return_exceptions=True),
-                            timeout=3.0
+                            timeout=5.0
                         ))
                         logger.info("✅ All pending tasks completed")
                     except asyncio.TimeoutError:
-                        logger.warning("⚠️ Some tasks didn't complete in 3s")
+                        logger.warning("⚠️ Some tasks didn't complete in 5s - will not close loop")
                 else:
                     logger.info("✅ No pending tasks after process_update")
                 
@@ -113,26 +113,24 @@ class handler(BaseHTTPRequestHandler):
                 logger.error(f"❌ Error processing update: {e}", exc_info=True)
                 raise
             finally:
-                # Простое закрытие loop - все задачи должны быть завершены к этому моменту
+                # КРИТИЧНО: Не закрываем loop, если есть pending задачи
+                # Закрытие loop до завершения HTTP запросов вызывает ошибку "Event loop is closed"
                 try:
-                    # Финальная проверка - если есть задачи, даем еще секунду
+                    # Финальная проверка - если есть задачи, НЕ закрываем loop
                     remaining = [t for t in asyncio.all_tasks(loop) if not t.done()]
                     if remaining:
-                        logger.warning(f"⚠️ {len(remaining)} tasks still pending, giving 1 more second...")
-                        try:
-                            loop.run_until_complete(asyncio.wait_for(
-                                asyncio.gather(*remaining, return_exceptions=True),
-                                timeout=1.0
-                            ))
-                        except asyncio.TimeoutError:
-                            logger.warning("⚠️ Tasks still pending, but closing loop anyway")
+                        logger.warning(f"⚠️ {len(remaining)} tasks still pending, NOT closing loop to avoid 'Event loop is closed' error")
+                        # НЕ закрываем loop - пусть HTTP запросы завершатся
+                        # В serverless окружении функция завершится, но loop останется открытым
+                        return
                     
-                    # Закрываем loop
+                    # Закрываем loop только если нет pending задач
                     if not loop.is_closed():
                         loop.close()
-                        logger.info("✅ Loop closed")
+                        logger.info("✅ Loop closed (no pending tasks)")
                 except Exception as e:
-                    logger.warning(f"Error closing loop: {e}")
+                    logger.warning(f"Error during cleanup: {e}")
+                    # В случае ошибки тоже не закрываем loop
             
             # Возвращаем успешный ответ
             self._send(200, {"status": "ok"})
