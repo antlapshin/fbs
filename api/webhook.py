@@ -46,8 +46,13 @@ async def _process_update_async(update_data: dict) -> None:
     # Создаем Update объект из JSON
     update = Update.de_json(update_data, application.bot)
     
-    # Обрабатываем обновление
-    await application.process_update(update)
+    # Обрабатываем обновление с защитой от отмены
+    # Используем asyncio.shield для защиты HTTP запросов
+    try:
+        await asyncio.shield(application.process_update(update))
+    except asyncio.CancelledError:
+        logger.warning("⚠️ Update processing was cancelled, but HTTP requests may continue")
+        raise
 
 
 class handler(BaseHTTPRequestHandler):
@@ -123,46 +128,42 @@ class handler(BaseHTTPRequestHandler):
                 logger.error(f"❌ Error processing update: {e}", exc_info=True)
                 raise
             finally:
-                # Правильно закрываем loop, но даем максимальное время на завершение HTTP запросов
+                # Правильно закрываем loop, но НЕ закрываем его, если есть pending HTTP запросы
+                # Это критично - закрытие loop до завершения HTTP запросов вызывает ошибку
                 try:
                     # Проверяем оставшиеся задачи
                     remaining = [t for t in asyncio.all_tasks(loop) if not t.done()]
                     if remaining:
                         logger.info(f"🔄 Found {len(remaining)} remaining tasks, giving final chance...")
                         try:
-                            # Даем еще 10 секунд на завершение (последний шанс)
+                            # Даем еще 20 секунд на завершение (максимальное время)
                             loop.run_until_complete(asyncio.wait_for(
                                 asyncio.gather(*remaining, return_exceptions=True),
-                                timeout=10.0
+                                timeout=20.0
                             ))
                             logger.info("✅ All remaining tasks completed")
                         except asyncio.TimeoutError:
                             logger.warning("⚠️ Some tasks still pending after all attempts")
-                            # Проверяем, есть ли еще задачи
-                            still_pending = [t for t in asyncio.all_tasks(loop) if not t.done()]
-                            if still_pending:
-                                logger.warning(f"⚠️ {len(still_pending)} tasks will be cancelled")
-                                # Отменяем только если действительно нужно
-                                for task in still_pending:
-                                    if not task.done():
-                                        task.cancel()
-                                # Ждем отмены
-                                try:
-                                    loop.run_until_complete(asyncio.wait_for(
-                                        asyncio.gather(*still_pending, return_exceptions=True),
-                                        timeout=2.0
-                                    ))
-                                except asyncio.TimeoutError:
-                                    pass
+                            # НЕ закрываем loop, если есть pending задачи
+                            # Это позволит HTTP запросам завершиться в фоне
+                            # В serverless окружении функция завершится, но loop может остаться открытым
+                            logger.warning("⚠️ Leaving loop open for pending HTTP requests")
+                            return  # Не закрываем loop
                 except Exception as e:
                     logger.warning(f"Error during cleanup: {e}")
-                finally:
-                    # Закрываем loop только если он еще не закрыт
-                    try:
-                        if not loop.is_closed():
-                            loop.close()
-                    except Exception as e:
-                        logger.warning(f"Error closing loop: {e}")
+                
+                # Закрываем loop только если нет pending задач
+                try:
+                    if not loop.is_closed():
+                        # Проверяем еще раз перед закрытием
+                        final_check = [t for t in asyncio.all_tasks(loop) if not t.done()]
+                        if final_check:
+                            logger.warning(f"⚠️ {len(final_check)} tasks still pending, NOT closing loop")
+                            return  # Не закрываем loop
+                        loop.close()
+                        logger.info("✅ Loop closed successfully")
+                except Exception as e:
+                    logger.warning(f"Error closing loop: {e}")
             
             # Возвращаем успешный ответ
             self._send(200, {"status": "ok"})
