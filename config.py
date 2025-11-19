@@ -16,6 +16,16 @@ TELEGRAM_BOT_TOKEN = _get_required_env("TELEGRAM_BOT_TOKEN")
 admin_ids_raw = os.getenv("ADMIN_IDS", "")
 ADMIN_IDS = [int(admin_id.strip()) for admin_id in admin_ids_raw.split(",") if admin_id.strip()]
 
+# Логирование для отладки (только если есть значение)
+if admin_ids_raw:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔑 Loaded ADMIN_IDS: {ADMIN_IDS} from raw: '{admin_ids_raw}'")
+else:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning("⚠️ ADMIN_IDS is empty or not set!")
+
 MAGNIT_API_KEY = _get_required_env("MAGNIT_API_KEY")
 OZON_API_KEY = _get_required_env("OZON_API_KEY")
 OZON_CLIENT_ID = _get_required_env("OZON_CLIENT_ID")

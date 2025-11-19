@@ -22,6 +22,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
 
 def is_admin(user_id):
@@ -31,7 +32,12 @@ def is_admin(user_id):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
-    if not is_admin(update.effective_user.id):
+    user_id = update.effective_user.id
+    logger.info(f"🔍 User {user_id} ({update.effective_user.username or 'no username'}) tried /start")
+    logger.info(f"🔑 ADMIN_IDS: {ADMIN_IDS}")
+    
+    if not is_admin(user_id):
+        logger.warning(f"❌ Access denied for user {user_id}")
         await update.message.reply_text("❌ У вас нет доступа к этому боту")
         return
 
